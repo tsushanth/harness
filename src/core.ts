@@ -75,8 +75,9 @@ export class Harness {
         fnToolCalls.map(async (tc) => {
           let args: Record<string, unknown>;
 
+          const toolDef = tools.find((t) => t.name === tc.function.name);
           try {
-            // Strict mode guarantees valid JSON — skip repair loop
+            // Strict mode guarantees valid JSON matching the schema — skip repair
             args = useStrict
               ? (JSON.parse(tc.function.arguments) as Record<string, unknown>)
               : await repairToolCall(
@@ -86,7 +87,8 @@ export class Harness {
                   tools,
                   tc.function.arguments,
                   "initial parse",
-                  maxRetries
+                  maxRetries,
+                  toolDef?.parameters
                 );
           } catch (err) {
             return {

@@ -143,4 +143,55 @@ export const BASELINE_SUITE: EvalCase[] = [
       toolsCalled: ["search", "calculate"],
     },
   },
+  {
+    id: "schema-enum-enforcement",
+    description: "Harness validates enum and tool still produces a valid result",
+    userMessage: "Get the weather in Berlin. Use celsius.",
+    tools: [
+      {
+        name: "get_weather",
+        description: "Get current weather for a city.",
+        parameters: {
+          type: "object",
+          properties: {
+            city: { type: "string" },
+            unit: { type: "string", enum: ["celsius", "fahrenheit"] },
+          },
+          required: ["city", "unit"],
+        },
+        fn: async ({ city, unit }) => ({ city, temperature: 22, unit, condition: "cloudy" }),
+      },
+    ],
+    expect: {
+      toolsCalled: ["get_weather"],
+      args: { get_weather: { city: "Berlin", unit: "celsius" } },
+      answerJudge: "The response gives Berlin weather in celsius.",
+    },
+  },
+  {
+    id: "schema-required-field",
+    description: "Model passes all required fields when the schema makes them explicit",
+    userMessage: "What is 99 * 99?",
+    tools: [
+      {
+        name: "calculate",
+        description: "Evaluate a math expression.",
+        parameters: {
+          type: "object",
+          properties: {
+            expression: { type: "string", description: "The math expression to evaluate, e.g. '2 + 2'" },
+          },
+          required: ["expression"],
+        },
+        fn: async ({ expression }) => ({
+          result: Function(`"use strict"; return (${expression})`)(),
+        }),
+      },
+    ],
+    expect: {
+      toolsCalled: ["calculate"],
+      args: { calculate: { expression: "99 * 99" } },
+      answerJudge: "The response correctly states the answer is 9801.",
+    },
+  },
 ];
