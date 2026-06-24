@@ -1,33 +1,68 @@
 import OpenAI from "openai";
 import { Harness } from "../core.js";
 import { judgeAnswer } from "./judge.js";
-import type { EvalCase, EvalCaseResult, EvalSuiteResult } from "./types.js";
+import type {
+  EvalCase,
+  EvalCaseResult,
+  EvalCaseMultiResult,
+  EvalSuiteResult,
+} from "./types.js";
 
-// Use a cheap fast model for judging — not the model under test
 const JUDGE_MODEL = "openai/gpt-4o-mini";
 
 export async function runEval(
   cases: EvalCase[],
   model: string,
-  client: OpenAI
+  client: OpenAI,
+  runsPerCase = 1
 ): Promise<EvalSuiteResult> {
   const harness = new Harness({ client, model });
   const start = Date.now();
-  const results: EvalCaseResult[] = [];
 
-  for (const c of cases) {
-    results.push(await runCase(c, harness, client));
-  }
+  const multiResults: EvalCaseMultiResult[] = await Promise.all(
+    cases.map((c) => runCaseMulti(c, harness, client, runsPerCase))
+  );
 
-  const passed = results.filter((r) => r.passed).length;
+  const passed = multiResults.filter((r) => r.passed).length;
 
   return {
     model,
+    runs: runsPerCase,
     total: cases.length,
     passed,
     passRate: passed / cases.length,
-    cases: results,
+    cases: multiResults,
     durationMs: Date.now() - start,
+  };
+}
+
+async function runCaseMulti(
+  c: EvalCase,
+  harness: Harness,
+  client: OpenAI,
+  runs: number
+): Promise<EvalCaseMultiResult> {
+  // Run all N trials in parallel
+  const trials = await Promise.all(
+    Array.from({ length: runs }, () => runCase(c, harness, client))
+  );
+
+  const passCount = trials.filter((t) => t.passed).length;
+  const majority = Math.ceil(runs / 2);
+  const passed = passCount >= majority;
+
+  // Representative: prefer a passing run for the report; fall back to last
+  const representative =
+    trials.find((t) => t.passed) ?? trials[trials.length - 1]!;
+
+  return {
+    id: c.id,
+    description: c.description,
+    runs,
+    passCount,
+    passed,
+    passRate: passCount / runs,
+    representative,
   };
 }
 
@@ -71,7 +106,12 @@ async function runCase(
 
     const lastAssistant = [...result.messages]
       .reverse()
-      .find((m) => m.role === "assistant" && "content" in m && typeof m.content === "string");
+      .find(
+        (m) =>
+          m.role === "assistant" &&
+          "content" in m &&
+          typeof m.content === "string"
+      );
     finalAnswer =
       lastAssistant && "content" in lastAssistant
         ? (lastAssistant.content as string)
@@ -80,7 +120,15 @@ async function runCase(
     errors.push(err instanceof Error ? err.message : String(err));
   }
 
-  const scores = await scoreCase(c, calledTools, calledArgs, toolResultsLog, finalAnswer, errors, client);
+  const scores = await scoreCase(
+    c,
+    calledTools,
+    calledArgs,
+    toolResultsLog,
+    finalAnswer,
+    errors,
+    client
+  );
 
   return {
     id: c.id,
@@ -128,7 +176,6 @@ async function scoreCase(
         })
       : null;
 
-  // LLM-as-judge takes priority over literal answerContains
   if (c.expect.answerJudge != null) {
     const judgeResult = await judgeAnswer(
       client,

@@ -6,13 +6,9 @@ export interface EvalCase {
   userMessage: string;
   tools: ToolDefinition[];
   expect: {
-    // Which tools should have been called (in any order)
     toolsCalled?: string[];
-    // Argument matchers: { toolName: { argKey: expectedValue } }
     args?: Record<string, Record<string, unknown>>;
-    // Literal substring check (fast, no API call)
     answerContains?: string[];
-    // LLM-as-judge: natural language criteria evaluated by a judge model
     answerJudge?: string;
   };
 }
@@ -22,10 +18,10 @@ export interface EvalCaseResult {
   description: string;
   passed: boolean;
   scores: {
-    toolsCalled: boolean | null;  // null = not checked
+    toolsCalled: boolean | null;
     argMatch: boolean | null;
     answerMatch: boolean | null;
-    judgeReason?: string;         // set when answerJudge was used
+    judgeReason?: string;
   };
   finalAnswer: string;
   turns: number;
@@ -34,11 +30,23 @@ export interface EvalCaseResult {
   errors: string[];
 }
 
+// Result for one case across N runs
+export interface EvalCaseMultiResult {
+  id: string;
+  description: string;
+  runs: number;
+  passCount: number;          // how many runs passed
+  passed: boolean;            // majority vote (>= ceil(runs/2))
+  passRate: number;           // passCount / runs
+  representative: EvalCaseResult; // last passing run, or last run if all fail
+}
+
 export interface EvalSuiteResult {
   model: string;
-  total: number;
-  passed: number;
+  runs: number;               // runs per case
+  total: number;              // number of cases
+  passed: number;             // cases that passed majority vote
   passRate: number;
-  cases: EvalCaseResult[];
+  cases: EvalCaseMultiResult[];
   durationMs: number;
 }
