@@ -20,7 +20,7 @@ export async function repairToolCall(
   // Phase 2: validate against schema if we have one and JSON parsed OK
   if (parsed !== null && schema) {
     const validation = validateArgs(parsed, schema);
-    if (validation.valid) return parsed;
+    if (validation.valid) return validation.data; // may be coerced copy
 
     // Schema invalid — repair with targeted error
     return repairWithError(
@@ -77,14 +77,14 @@ async function repairWithError(
     const repaired = tryParse(toolCall.function.arguments);
     if (repaired === null) continue;
 
-    // Validate repaired args against schema
+    // Validate repaired args against schema (with coercion fallback)
     if (schema) {
       const validation = validateArgs(repaired, schema);
       if (!validation.valid) {
-        // Update error message for next attempt
         errorMessage = `Still failing schema validation:\n${validation.errors.map((e) => `  - ${e}`).join("\n")}\n\nPlease fix these issues.`;
         continue;
       }
+      return validation.data; // return coerced data if applicable
     }
 
     return repaired;
