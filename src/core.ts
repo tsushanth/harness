@@ -5,6 +5,7 @@ import { toOpenAITools, dispatch } from "./tools.js";
 import { repairToolCall } from "./repair.js";
 import { buildSystemPrompt, detectModelFamily } from "./prompt.js";
 import { supportsStrictTools, toStrictTools } from "./structured.js";
+import { streamRun, type StreamEvent } from "./stream.js";
 
 export class Harness {
   private client: OpenAI;
@@ -21,6 +22,8 @@ export class Harness {
       maxTurns = 10,
       maxRetries = 3,
       model = this.defaultModel,
+      maxTokens,
+      collector,
     } = options;
 
     const family = detectModelFamily(model);
@@ -50,6 +53,7 @@ export class Harness {
         messages,
         tools: openAITools,
         tool_choice: "auto",
+        ...(maxTokens != null ? { max_tokens: maxTokens } : {}),
       });
 
       const choice = response.choices[0];
@@ -88,7 +92,9 @@ export class Harness {
                   tc.function.arguments,
                   "initial parse",
                   maxRetries,
-                  toolDef?.parameters
+                  toolDef?.parameters,
+                  tc.function.name,
+                  collector
                 );
           } catch (err) {
             return {
@@ -122,5 +128,10 @@ export class Harness {
     }
 
     return { messages, turns, toolCallsMade, usedStrictMode: useStrict };
+  }
+
+  stream(options: RunOptions): AsyncGenerator<StreamEvent> {
+    const model = options.model ?? this.defaultModel;
+    return streamRun(this.client, { ...options, model });
   }
 }

@@ -28,7 +28,9 @@ export interface RunOptions {
   maxTurns?: number;
   maxRetries?: number;
   model?: string;
+  maxTokens?: number;
   systemPrompt?: string; // merged with harness tool-use instructions
+  collector?: import("./finetune.js").FineTuneCollector;
 }
 
 export interface RunResult {

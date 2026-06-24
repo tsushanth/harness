@@ -45,7 +45,8 @@ const FAMILY_ADDENDA: Record<ModelFamily, string> = {
 ## Additional instructions
 - You must always call a tool using the tool call interface provided. Do not write raw JSON, function signatures, or tool call syntax in your text responses.
 - When the user asks for multiple independent things (e.g. weather in two cities, or weather AND a calculation using numbers already provided), call ALL required tools in a SINGLE response — do not split them across turns.
-- After receiving tool results, write a natural language response to the user. Do not repeat or echo the tool call JSON in your final answer.`,
+- After receiving tool results, write a natural language response to the user. Do not repeat or echo the tool call JSON in your final answer.
+- For boolean parameters: pass the literal JSON values true or false (no quotes). Never pass "true" or "false" as strings.`,
 
   qwen: `\
 

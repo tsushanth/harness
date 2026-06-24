@@ -1,6 +1,7 @@
 import OpenAI from "openai";
 import type { ChatCompletionMessageFunctionToolCall } from "openai/resources/chat/completions";
 import type { ToolDefinition, Message } from "./types.js";
+import type { FineTuneCollector } from "./finetune.js";
 import { toOpenAITools } from "./tools.js";
 import { validateArgs } from "./schema.js";
 
@@ -12,7 +13,9 @@ export async function repairToolCall(
   rawArguments: string,
   _parseErrorHint: string,
   maxRetries: number,
-  schema?: Record<string, unknown>
+  schema?: Record<string, unknown>,
+  toolName?: string,
+  collector?: FineTuneCollector
 ): Promise<Record<string, unknown>> {
   // Phase 1: parse JSON
   const parsed = tryParse(rawArguments);
@@ -20,25 +23,16 @@ export async function repairToolCall(
   // Phase 2: validate against schema if we have one and JSON parsed OK
   if (parsed !== null && schema) {
     const validation = validateArgs(parsed, schema);
-    if (validation.valid) return validation.data; // may be coerced copy
+    if (validation.valid) return validation.data;
 
-    // Schema invalid — repair with targeted error
-    return repairWithError(
-      client, model, messages, tools,
-      `The tool call arguments were valid JSON but failed schema validation:\n${validation.errors.map((e) => `  - ${e}`).join("\n")}\n\nPlease fix these issues and retry the tool call.`,
-      maxRetries,
-      schema
-    );
+    const errorMessage = `The tool call arguments were valid JSON but failed schema validation:\n${validation.errors.map((e) => `  - ${e}`).join("\n")}\n\nPlease fix these issues and retry the tool call.`;
+    return repairWithError(client, model, messages, tools, rawArguments, errorMessage, maxRetries, schema, toolName, collector);
   }
 
-  // JSON parse failed — repair with parse error
+  // JSON parse failed
   if (parsed === null) {
-    return repairWithError(
-      client, model, messages, tools,
-      `The tool call had malformed JSON arguments that could not be parsed.\n\nRaw output was:\n${rawArguments}\n\nPlease retry the tool call with valid JSON arguments.`,
-      maxRetries,
-      schema
-    );
+    const errorMessage = `The tool call had malformed JSON arguments that could not be parsed.\n\nRaw output was:\n${rawArguments}\n\nPlease retry the tool call with valid JSON arguments.`;
+    return repairWithError(client, model, messages, tools, rawArguments, errorMessage, maxRetries, schema, toolName, collector);
   }
 
   return parsed;
@@ -49,9 +43,12 @@ async function repairWithError(
   model: string,
   messages: Message[],
   tools: ToolDefinition[],
+  originalRawArgs: string,
   errorMessage: string,
   maxRetries: number,
-  schema?: Record<string, unknown>
+  schema?: Record<string, unknown>,
+  toolName?: string,
+  collector?: FineTuneCollector
 ): Promise<Record<string, unknown>> {
   for (let attempt = 0; attempt < maxRetries; attempt++) {
     const repairMessages: Message[] = [
@@ -77,16 +74,22 @@ async function repairWithError(
     const repaired = tryParse(toolCall.function.arguments);
     if (repaired === null) continue;
 
-    // Validate repaired args against schema (with coercion fallback)
     if (schema) {
       const validation = validateArgs(repaired, schema);
       if (!validation.valid) {
         errorMessage = `Still failing schema validation:\n${validation.errors.map((e) => `  - ${e}`).join("\n")}\n\nPlease fix these issues.`;
         continue;
       }
-      return validation.data; // return coerced data if applicable
+      // Record successful repair as training data
+      if (collector && toolName) {
+        collector.record(messages, toolName, originalRawArgs, errorMessage, validation.data);
+      }
+      return validation.data;
     }
 
+    if (collector && toolName) {
+      collector.record(messages, toolName, originalRawArgs, errorMessage, repaired);
+    }
     return repaired;
   }
 

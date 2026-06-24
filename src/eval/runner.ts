@@ -98,6 +98,7 @@ async function runCase(
       tools: instrumentedTools,
       maxTurns: 8,
       maxRetries: 3,
+      maxTokens: 1024,
     });
 
     turns = result.turns;
