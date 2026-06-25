@@ -6,14 +6,16 @@ import {
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 import OpenAI from "openai";
+import { execSync } from "node:child_process";
+import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { Harness, formatCost } from "../src/index.js";
 import type { ToolDefinition } from "../src/index.js";
 
 // ── Provider setup ────────────────────────────────────────────────────────────
-// Reads OPENROUTER_API_KEY or GROQ_API_KEY from env.
-// Set whichever you have; OpenRouter is recommended (more model choice).
 const OPENROUTER_KEY = process.env.OPENROUTER_API_KEY;
 const GROQ_KEY = process.env.GROQ_API_KEY;
+const BRAVE_KEY = process.env.BRAVE_SEARCH_API_KEY;
+const TAVILY_KEY = process.env.TAVILY_API_KEY;
 
 if (!OPENROUTER_KEY && !GROQ_KEY) {
   process.stderr.write(
@@ -23,14 +25,8 @@ if (!OPENROUTER_KEY && !GROQ_KEY) {
 }
 
 const client = OPENROUTER_KEY
-  ? new OpenAI({
-      apiKey: OPENROUTER_KEY,
-      baseURL: "https://openrouter.ai/api/v1",
-    })
-  : new OpenAI({
-      apiKey: GROQ_KEY,
-      baseURL: "https://api.groq.com/openai/v1",
-    });
+  ? new OpenAI({ apiKey: OPENROUTER_KEY, baseURL: "https://openrouter.ai/api/v1" })
+  : new OpenAI({ apiKey: GROQ_KEY, baseURL: "https://api.groq.com/openai/v1" });
 
 const DEFAULT_MODEL = OPENROUTER_KEY
   ? "meta-llama/llama-3.3-70b-instruct"
@@ -38,24 +34,131 @@ const DEFAULT_MODEL = OPENROUTER_KEY
 
 const harness = new Harness({ client, model: DEFAULT_MODEL });
 
+// ── Tool implementations ──────────────────────────────────────────────────────
+
+async function webSearch(query: string, count = 5): Promise<unknown> {
+  // Brave Search API
+  if (BRAVE_KEY) {
+    const url = `https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(query)}&count=${count}`;
+    const res = await fetch(url, {
+      headers: { "Accept": "application/json", "X-Subscription-Token": BRAVE_KEY },
+    });
+    if (!res.ok) throw new Error(`Brave Search ${res.status}: ${await res.text()}`);
+    const data = await res.json() as { web?: { results?: Array<{ title: string; url: string; description: string }> } };
+    return (data.web?.results ?? []).map((r) => ({
+      title: r.title,
+      url: r.url,
+      snippet: r.description,
+    }));
+  }
+
+  // Tavily API
+  if (TAVILY_KEY) {
+    const res = await fetch("https://api.tavily.com/search", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ api_key: TAVILY_KEY, query, max_results: count }),
+    });
+    if (!res.ok) throw new Error(`Tavily ${res.status}: ${await res.text()}`);
+    const data = await res.json() as { results?: Array<{ title: string; url: string; content: string }> };
+    return (data.results ?? []).map((r) => ({
+      title: r.title,
+      url: r.url,
+      snippet: r.content,
+    }));
+  }
+
+  throw new Error(
+    "No search API configured. Set BRAVE_SEARCH_API_KEY or TAVILY_API_KEY in the MCP server env."
+  );
+}
+
 // ── Built-in tools the open model can use ────────────────────────────────────
 const DEMO_TOOLS: ToolDefinition[] = [
+  {
+    name: "web_search",
+    description:
+      "Search the web and return the top results (title, URL, snippet). Use for current events, facts, or anything that needs live data.",
+    parameters: {
+      type: "object",
+      properties: {
+        query: { type: "string", description: "The search query." },
+        count: { type: "number", description: "Number of results to return (default 5, max 10)." },
+      },
+      required: ["query"],
+    },
+    fn: async ({ query, count }) =>
+      webSearch(query as string, Math.min((count as number | undefined) ?? 5, 10)),
+  },
+  {
+    name: "read_file",
+    description: "Read the contents of a file at the given path.",
+    parameters: {
+      type: "object",
+      properties: {
+        path: { type: "string", description: "Absolute or relative file path." },
+      },
+      required: ["path"],
+    },
+    fn: ({ path }) => {
+      const p = path as string;
+      if (!existsSync(p)) return { error: `File not found: ${p}` };
+      return { content: readFileSync(p, "utf8") };
+    },
+  },
+  {
+    name: "write_file",
+    description: "Write text content to a file at the given path (overwrites if exists).",
+    parameters: {
+      type: "object",
+      properties: {
+        path: { type: "string", description: "Absolute or relative file path." },
+        content: { type: "string", description: "Text content to write." },
+      },
+      required: ["path", "content"],
+    },
+    fn: ({ path, content }) => {
+      writeFileSync(path as string, content as string, "utf8");
+      return { success: true, path };
+    },
+  },
+  {
+    name: "shell",
+    description:
+      "Run a shell command and return stdout. Avoid destructive commands. Timeout: 10s.",
+    parameters: {
+      type: "object",
+      properties: {
+        command: { type: "string", description: "Shell command to execute." },
+      },
+      required: ["command"],
+    },
+    fn: ({ command }) => {
+      try {
+        const output = execSync(command as string, {
+          timeout: 10_000,
+          encoding: "utf8",
+          stdio: ["pipe", "pipe", "pipe"],
+        });
+        return { output };
+      } catch (err) {
+        const e = err as { stdout?: string; stderr?: string; message?: string };
+        return { error: e.stderr ?? e.message ?? String(err), output: e.stdout ?? "" };
+      }
+    },
+  },
   {
     name: "calculate",
     description: "Evaluate a mathematical expression and return the result.",
     parameters: {
       type: "object",
       properties: {
-        expression: {
-          type: "string",
-          description: "A JavaScript-safe math expression, e.g. '2 ** 10 + 3 * 7'",
-        },
+        expression: { type: "string", description: "A JavaScript-safe math expression." },
       },
       required: ["expression"],
     },
     fn: ({ expression }) => {
       try {
-        // Safe-ish: no network, no fs — just arithmetic
         const result = Function(`"use strict"; return (${expression as string})`)();
         return { result };
       } catch (e) {
@@ -69,25 +172,6 @@ const DEMO_TOOLS: ToolDefinition[] = [
     parameters: { type: "object", properties: {} },
     fn: () => ({ utc: new Date().toISOString() }),
   },
-  {
-    name: "word_count",
-    description: "Count words and characters in a block of text.",
-    parameters: {
-      type: "object",
-      properties: {
-        text: { type: "string", description: "The text to analyse." },
-      },
-      required: ["text"],
-    },
-    fn: ({ text }) => {
-      const t = text as string;
-      return {
-        words: t.split(/\s+/).filter(Boolean).length,
-        characters: t.length,
-        lines: t.split("\n").length,
-      };
-    },
-  },
 ];
 
 // ── MCP server ────────────────────────────────────────────────────────────────
@@ -96,30 +180,30 @@ const server = new Server(
   { capabilities: { tools: {} } }
 );
 
+const TOOL_NAMES = DEMO_TOOLS.map((t) => t.name).join(", ");
+
 server.setRequestHandler(ListToolsRequestSchema, async () => ({
   tools: [
     {
       name: "run_agent",
       description:
-        "Run a prompt through an open-source LLM using the tool-use harness. " +
-        "Use this to delegate cheap/repetitive subtasks to a faster or cheaper model. " +
-        "The agent has access to: calculate, get_current_time, word_count.",
+        "Run a prompt through an open-source LLM (Llama 3.3 70B) using the tool-use harness. " +
+        "Delegate cheap/repetitive subtasks to avoid burning Claude tokens. " +
+        `The agent has access to: ${TOOL_NAMES}.`,
       inputSchema: {
         type: "object" as const,
         properties: {
           prompt: {
             type: "string",
-            description: "The user message / task to send to the open model.",
+            description: "The task to send to the open model.",
           },
           model: {
             type: "string",
-            description:
-              "Optional model override. Defaults to llama-3.3-70b-instruct (OpenRouter) " +
-              "or llama-3.3-70b-versatile (Groq).",
+            description: "Optional model override (default: llama-3.3-70b-instruct).",
           },
           system_prompt: {
             type: "string",
-            description: "Optional extra system context to prepend.",
+            description: "Optional extra system context.",
           },
         },
         required: ["prompt"],
@@ -155,15 +239,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       ? lastMessage.content
       : "(no text response)";
 
-  const costLine = result.cost ? `\n\n---\n_Cost: ${formatCost(result.cost)} · ${result.turns} turn(s) · ${result.toolCallsMade} tool call(s) · model: ${model ?? DEFAULT_MODEL}_` : "";
+  const costLine = result.cost
+    ? `\n\n---\n_Cost: ${formatCost(result.cost)} · ${result.turns} turn(s) · ${result.toolCallsMade} tool call(s) · model: ${model ?? DEFAULT_MODEL}_`
+    : "";
 
   return {
-    content: [
-      {
-        type: "text",
-        text: answer + costLine,
-      },
-    ],
+    content: [{ type: "text", text: answer + costLine }],
   };
 });
 
