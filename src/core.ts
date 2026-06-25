@@ -9,6 +9,8 @@ import { streamRun, type StreamEvent } from "./stream.js";
 import { withRetry } from "./retry.js";
 import { pruneMessages, estimateTokens, getContextLimit } from "./context.js";
 import { estimateCost } from "./cost.js";
+import { makePlan, planToSystemAddendum } from "./planner.js";
+import { injectContext } from "./context-providers.js";
 
 async function runWithConcurrencyLimit<T, R>(
   items: T[],
@@ -48,12 +50,16 @@ export class Harness {
       maxTokens,
       maxToolResultChars,
       signal,
+      plan: usePlanning = false,
+      contextProviders = [],
       collector,
     } = options;
 
     const family = detectModelFamily(model);
 
-    const messages: Message[] = [...options.messages];
+    // Inject context providers before the model sees the task
+    const messagesWithContext = await injectContext(options.messages, contextProviders);
+    const messages: Message[] = [...messagesWithContext];
     const systemIndex = messages.findIndex((m) => m.role === "system");
     const existingSystem =
       systemIndex >= 0
@@ -65,6 +71,19 @@ export class Harness {
       messages[systemIndex] = { role: "system", content: systemPrompt };
     } else {
       messages.unshift({ role: "system", content: systemPrompt });
+    }
+
+    // Plan-then-execute: produce an ordered plan before dispatching tools
+    if (usePlanning && tools.length > 1) {
+      const plan = await makePlan(this.client, model, messages, tools, signal);
+      if (plan) {
+        const addendum = planToSystemAddendum(plan);
+        const sysIdx = messages.findIndex((m) => m.role === "system");
+        if (sysIdx >= 0) {
+          const sys = messages[sysIdx] as { role: "system"; content: string };
+          messages[sysIdx] = { role: "system", content: sys.content + addendum };
+        }
+      }
     }
 
     const useStrict = supportsStrictTools(model);

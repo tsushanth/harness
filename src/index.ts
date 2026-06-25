@@ -6,7 +6,21 @@ export { FineTuneCollector } from "./finetune.js";
 export type { FineTuneExample } from "./finetune.js";
 export { estimateCost, formatCost } from "./cost.js";
 export { pruneMessages, estimateTokens, getContextLimit } from "./context.js";
+export { makePlan, planToSystemAddendum } from "./planner.js";
+export { applyDiff, makeDiff } from "./diff.js";
+export {
+  fileProvider,
+  filesProvider,
+  gitDiffProvider,
+  gitLogProvider,
+  directoryProvider,
+  shellProvider,
+  injectContext,
+} from "./context-providers.js";
 export type { CostEstimate } from "./cost.js";
+export type { Plan, PlanStep } from "./planner.js";
+export type { DiffResult } from "./diff.js";
+export type { ContextProvider } from "./context-providers.js";
 export type {
   Message,
   ToolDefinition,

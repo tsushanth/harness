@@ -8,7 +8,7 @@ import {
 import OpenAI from "openai";
 import { execSync } from "node:child_process";
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
-import { Harness, formatCost } from "../src/index.js";
+import { Harness, formatCost, applyDiff } from "../src/index.js";
 import type { ToolDefinition } from "../src/index.js";
 
 // ── Provider setup ────────────────────────────────────────────────────────────
@@ -145,6 +145,27 @@ const DEMO_TOOLS: ToolDefinition[] = [
         const e = err as { stdout?: string; stderr?: string; message?: string };
         return { error: e.stderr ?? e.message ?? String(err), output: e.stdout ?? "" };
       }
+    },
+  },
+  {
+    name: "apply_diff",
+    description:
+      "Apply a unified diff to a file. Use this instead of write_file when editing existing code — " +
+      "produce a diff of only the changed lines, not the entire file.",
+    parameters: {
+      type: "object",
+      properties: {
+        path: { type: "string", description: "Path to the file to patch." },
+        diff: {
+          type: "string",
+          description:
+            "Unified diff string (--- / +++ / @@ format). Only include changed lines and minimal context.",
+        },
+      },
+      required: ["path", "diff"],
+    },
+    fn: ({ path, diff }) => {
+      return applyDiff(path as string, diff as string);
     },
   },
   {

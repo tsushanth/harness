@@ -32,8 +32,10 @@ export interface RunOptions {
   maxTokens?: number;
   maxToolResultChars?: number; // max chars per tool result injected into context (default 4000)
   maxConcurrentTools?: number; // max parallel tool calls per turn (default 5)
-  signal?: AbortSignal;         // cancellation
-  systemPrompt?: string; // merged with harness tool-use instructions
+  signal?: AbortSignal;        // cancellation
+  plan?: boolean;              // enable plan-then-execute (default false)
+  contextProviders?: import("./context-providers.js").ContextProvider[];
+  systemPrompt?: string;       // merged with harness tool-use instructions
   collector?: import("./finetune.js").FineTuneCollector;
 }
 
