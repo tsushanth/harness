@@ -40,5 +40,5 @@
 
     "moduleResolution": "nodenext",
   },
-  "exclude": ["mcp", "dist", "scripts"]
+  "exclude": ["mcp", "dist", "scripts", "ui"]
 }
