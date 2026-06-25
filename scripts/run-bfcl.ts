@@ -21,6 +21,7 @@ const OPENAI_KEY = process.env.OPENAI_API_KEY;
 const model = process.argv[2] ?? "meta-llama/llama-3.3-70b-instruct";
 const category = (process.argv[3] ?? "simple") as "simple" | "multiple" | "parallel";
 const limit = parseInt(process.argv[4] ?? "50", 10);
+const usePlan = process.argv[5] === "--plan";
 
 const client = OPENAI_KEY
   ? new OpenAI({ apiKey: OPENAI_KEY })
@@ -28,7 +29,7 @@ const client = OPENAI_KEY
   ? new OpenAI({ apiKey: OPENROUTER_KEY, baseURL: "https://openrouter.ai/api/v1" })
   : new OpenAI({ apiKey: GROQ_KEY, baseURL: "https://api.groq.com/openai/v1" });
 
-console.log(`\nBFCL v3 — ${category} — ${model}`);
+console.log(`\nBFCL v3 — ${category} — ${model}${usePlan ? " [plan-then-execute]" : ""}`);
 console.log(`Running ${limit} cases...\n`);
 
 const startMs = Date.now();
@@ -38,6 +39,7 @@ const suite = await runBfcl({
   client,
   category,
   limit,
+  plan: usePlan,
   onProgress: (done, total, result: BfclResult) => {
     const icon = result.passed ? "✓" : "✗";
     process.stdout.write(

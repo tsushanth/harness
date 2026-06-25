@@ -141,12 +141,14 @@ export interface BfclRunOptions {
   category?: "simple" | "multiple" | "parallel";
   /** Max test cases to run (default 50 to keep costs low) */
   limit?: number;
+  /** Enable plan-then-execute before tool dispatch */
+  plan?: boolean;
   /** Callback for per-case progress */
   onProgress?: (done: number, total: number, result: BfclResult) => void;
 }
 
 export async function runBfcl(opts: BfclRunOptions): Promise<BfclSuiteResult> {
-  const { model, client, category = "simple", limit = 50, onProgress } = opts;
+  const { model, client, category = "simple", limit = 50, plan = false, onProgress } = opts;
 
   const [questions, answers] = await Promise.all([
     fetchNdJson(`${HF_BASE}/BFCL_v3_${category}.json`) as Promise<BfclQuestion[]>,
@@ -186,7 +188,7 @@ export async function runBfcl(opts: BfclRunOptions): Promise<BfclSuiteResult> {
     let gotStr = "no_tool_call";
 
     try {
-      const run = await harness.run({ messages, tools, maxTurns: 3 });
+      const run = await harness.run({ messages, tools, maxTurns: 3, plan });
       if (run.cost) totalCost += run.cost.totalCost;
 
       if (calledTools.length > 0) {
