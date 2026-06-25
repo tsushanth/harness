@@ -131,11 +131,12 @@ Stronger than simple — the model reliably selects the correct function when gi
 
 ### Parallel (call multiple functions in one turn)
 
-| Model | Accuracy | Cost / 50 cases |
+| Mode | Accuracy | Cost / 50 cases |
 |---|---|---|
 | **Llama 3.3 70B + harness** | **34%** | $0.050 |
+| **Llama 3.3 70B + harness + plan** | **40%** | $0.075 |
 
-Parallel is the honest weak spot. Llama 3.3 70B frequently calls only one function when the prompt requires several simultaneously. This is a model-level limitation — the harness dispatches correctly when the model does issue parallel calls, but can't force the model to batch calls it chooses to make sequentially.
+Parallel is the honest weak spot. Llama 3.3 70B frequently issues `no_tool_call` when the prompt requires multiple simultaneous tool calls. Plan-then-execute (+6 points) helps at the margins but doesn't close the gap — BFCL parallel specifically scores single-turn multi-call batching, while planning serializes calls across turns. For real tasks, sequential execution of a correct plan is usually preferable to unreliable parallel batching.
 
 Run it yourself:
 
