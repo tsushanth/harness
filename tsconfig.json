@@ -39,5 +39,6 @@
     "skipLibCheck": true,
 
     "moduleResolution": "nodenext",
-  }
+  },
+  "exclude": ["mcp", "dist"]
 }

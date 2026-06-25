@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "harness": {
+      "command": "npx",
+      "args": ["tsx", "/Users/sushanthtiruvaipati/harness/mcp/server.ts"]
+    }
+  }
+}
