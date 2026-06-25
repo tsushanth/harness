@@ -1,0 +1,178 @@
+{
+  "name": "harness",
+  "displayName": "Harness — Open LLM Assistant",
+  "description": "Free, open-source AI coding assistant using Llama, Qwen, and Mistral. Alternative to Continue.dev. Codebase search, file editing, web search, and shell — no subscription, no data collection.",
+  "version": "0.1.0",
+  "publisher": "tsushanth",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/tsushanth/harness"
+  },
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "AI",
+    "Chat",
+    "Programming Languages"
+  ],
+  "keywords": [
+    "llm",
+    "llama",
+    "ai",
+    "assistant",
+    "continue",
+    "open-source",
+    "chat",
+    "codebase",
+    "agent"
+  ],
+  "icon": "icon.png",
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "configuration": {
+      "title": "Harness",
+      "properties": {
+        "harness.provider": {
+          "type": "string",
+          "enum": ["openrouter", "groq", "ollama"],
+          "enumDescriptions": [
+            "OpenRouter — 200+ models, requires API key",
+            "Groq — free tier, very fast inference",
+            "Ollama — fully local, no API key required"
+          ],
+          "default": "groq",
+          "description": "LLM provider to use."
+        },
+        "harness.model": {
+          "type": "string",
+          "default": "",
+          "description": "Model override. Leave blank to use the provider default (llama-3.3-70b)."
+        },
+        "harness.ollamaBaseUrl": {
+          "type": "string",
+          "default": "http://localhost:11434",
+          "description": "Ollama server URL (only used when provider is ollama)."
+        },
+        "harness.indexPath": {
+          "type": "string",
+          "default": ".harness-index.json",
+          "description": "Path to the codebase vector index file, relative to the workspace root."
+        },
+        "harness.enableCodebaseContext": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically inject relevant code chunks from the index as context."
+        },
+        "harness.enableFileContext": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically inject the active file as context."
+        }
+      }
+    },
+    "commands": [
+      {
+        "command": "harness.openChat",
+        "title": "Open Chat",
+        "category": "Harness",
+        "icon": "$(comment-discussion)"
+      },
+      {
+        "command": "harness.askAboutSelection",
+        "title": "Ask Harness About Selection",
+        "category": "Harness"
+      },
+      {
+        "command": "harness.fixSelection",
+        "title": "Fix with Harness",
+        "category": "Harness"
+      },
+      {
+        "command": "harness.explainFile",
+        "title": "Explain This File",
+        "category": "Harness"
+      },
+      {
+        "command": "harness.buildIndex",
+        "title": "Build Codebase Index",
+        "category": "Harness"
+      },
+      {
+        "command": "harness.setApiKey",
+        "title": "Set API Key",
+        "category": "Harness"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "harness",
+          "title": "Harness",
+          "icon": "$(sparkle)"
+        }
+      ]
+    },
+    "views": {
+      "harness": [
+        {
+          "type": "webview",
+          "id": "harness.chatView",
+          "name": "Chat"
+        }
+      ]
+    },
+    "menus": {
+      "editor/context": [
+        {
+          "command": "harness.askAboutSelection",
+          "when": "editorHasSelection",
+          "group": "harness"
+        },
+        {
+          "command": "harness.fixSelection",
+          "when": "editorHasSelection",
+          "group": "harness"
+        }
+      ],
+      "view/title": [
+        {
+          "command": "harness.buildIndex",
+          "when": "view == harness.chatView",
+          "group": "navigation"
+        }
+      ]
+    },
+    "keybindings": [
+      {
+        "command": "harness.openChat",
+        "key": "ctrl+shift+h",
+        "mac": "cmd+shift+h"
+      },
+      {
+        "command": "harness.askAboutSelection",
+        "key": "ctrl+shift+a",
+        "mac": "cmd+shift+a",
+        "when": "editorHasSelection"
+      }
+    ]
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "watch": "tsc -p tsconfig.json --watch",
+    "package": "npx vsce package --no-dependencies",
+    "install-ext": "code --install-extension harness-0.1.0.vsix"
+  },
+  "dependencies": {
+    "@tsushanth/harness": "file:.."
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/vscode": "^1.85.0",
+    "typescript": "^5.0.0"
+  }
+}

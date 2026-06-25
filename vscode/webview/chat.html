@@ -1,0 +1,799 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline';" />
+  <title>Harness</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: var(--vscode-font-family, -apple-system, BlinkMacSystemFont, sans-serif);
+      font-size: var(--vscode-font-size, 13px);
+      background: var(--vscode-sideBar-background, #1e1e1e);
+      color: var(--vscode-foreground, #cccccc);
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* ── Toolbar ──────────────────────────────────────────────────────────── */
+    .toolbar {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 10px;
+      border-bottom: 1px solid var(--vscode-panel-border, #333);
+      flex-shrink: 0;
+      flex-wrap: wrap;
+    }
+
+    .toolbar-label {
+      font-size: 11px;
+      color: var(--vscode-descriptionForeground, #888);
+      flex: 1;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .tbtn {
+      background: var(--vscode-button-secondaryBackground, #3a3a3a);
+      color: var(--vscode-button-secondaryForeground, #ccc);
+      border: none;
+      border-radius: 3px;
+      padding: 3px 8px;
+      font-size: 11px;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .tbtn:hover { background: var(--vscode-button-secondaryHoverBackground, #444); }
+    .tbtn.primary {
+      background: var(--vscode-button-background, #0e639c);
+      color: var(--vscode-button-foreground, #fff);
+    }
+    .tbtn.primary:hover { background: var(--vscode-button-hoverBackground, #1177bb); }
+    .tbtn.danger { background: var(--vscode-inputValidation-errorBackground, #5a1d1d); color: #ff8080; }
+
+    /* ── Index bar ────────────────────────────────────────────────────────── */
+    .index-bar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 5px 10px;
+      background: var(--vscode-editorWidget-background, #252526);
+      border-bottom: 1px solid var(--vscode-panel-border, #333);
+      font-size: 11px;
+      flex-shrink: 0;
+    }
+    .index-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--vscode-descriptionForeground, #888);
+      flex-shrink: 0;
+    }
+    .index-dot.green { background: #4caf50; }
+    .index-dot.yellow { background: #ffc107; }
+    .index-status-text { flex: 1; color: var(--vscode-descriptionForeground, #888); }
+    .index-search-wrap {
+      display: flex;
+      gap: 4px;
+    }
+    .index-search-wrap input {
+      background: var(--vscode-input-background, #3c3c3c);
+      border: 1px solid var(--vscode-input-border, #555);
+      color: var(--vscode-input-foreground, #ccc);
+      border-radius: 3px;
+      padding: 2px 6px;
+      font-size: 11px;
+      width: 120px;
+      outline: none;
+    }
+    .index-search-wrap button {
+      background: var(--vscode-button-secondaryBackground, #3a3a3a);
+      border: none;
+      border-radius: 3px;
+      padding: 2px 6px;
+      color: var(--vscode-foreground, #ccc);
+      cursor: pointer;
+      font-size: 11px;
+    }
+    .progress-bar {
+      height: 2px;
+      background: var(--vscode-progressBar-background, #0e70c0);
+      border-radius: 1px;
+      transition: width 0.3s;
+      width: 0%;
+    }
+    .progress-track {
+      height: 2px;
+      background: var(--vscode-panel-border, #333);
+      display: none;
+    }
+
+    /* ── Messages ─────────────────────────────────────────────────────────── */
+    #messages {
+      flex: 1;
+      overflow-y: auto;
+      padding: 12px 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    .message { display: flex; flex-direction: column; gap: 4px; }
+
+    .msg-header {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 11px;
+      color: var(--vscode-descriptionForeground, #888);
+    }
+    .msg-role { font-weight: 600; }
+    .msg-role.user { color: var(--vscode-textLink-foreground, #4fc3f7); }
+    .msg-role.assistant { color: #81c784; }
+
+    .bubble {
+      background: var(--vscode-editorWidget-background, #252526);
+      border: 1px solid var(--vscode-panel-border, #333);
+      border-radius: 4px;
+      padding: 10px 12px;
+      line-height: 1.6;
+      font-size: 13px;
+    }
+    .message.user .bubble {
+      background: var(--vscode-editor-selectionBackground, #264f78);
+      border-color: transparent;
+    }
+
+    .bubble pre {
+      background: var(--vscode-textCodeBlock-background, #1e1e1e);
+      border: 1px solid var(--vscode-panel-border, #333);
+      border-radius: 3px;
+      padding: 10px;
+      overflow-x: auto;
+      margin: 8px 0;
+      font-family: var(--vscode-editor-font-family, monospace);
+      font-size: 12px;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+    .bubble code {
+      font-family: var(--vscode-editor-font-family, monospace);
+      font-size: 12px;
+      background: var(--vscode-textCodeBlock-background, #1e1e1e);
+      padding: 1px 4px;
+      border-radius: 2px;
+    }
+    .bubble pre code { background: none; padding: 0; }
+
+    /* Tool cards */
+    .tool-card {
+      background: var(--vscode-textCodeBlock-background, #1e1e1e);
+      border: 1px solid var(--vscode-panel-border, #333);
+      border-radius: 3px;
+      margin-bottom: 6px;
+      font-size: 12px;
+      overflow: hidden;
+    }
+    .tool-header {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 10px;
+      cursor: pointer;
+      user-select: none;
+    }
+    .tool-header:hover { background: rgba(255,255,255,0.04); }
+    .tool-fn { font-family: monospace; color: #82aaff; font-weight: 600; }
+    .tool-badge {
+      margin-left: auto;
+      font-size: 10px;
+      padding: 1px 6px;
+      border-radius: 10px;
+    }
+    .tool-badge.pending { background: rgba(255,193,7,0.2); color: #ffc107; }
+    .tool-badge.done { background: rgba(76,175,80,0.2); color: #81c784; }
+    .tool-chevron { font-size: 9px; color: var(--vscode-descriptionForeground, #888); transition: transform 0.15s; }
+    .tool-card.open .tool-chevron { transform: rotate(90deg); }
+    .tool-body { display: none; border-top: 1px solid var(--vscode-panel-border, #333); }
+    .tool-card.open .tool-body { display: block; }
+    .tool-section { padding: 6px 10px; }
+    .tool-section + .tool-section { border-top: 1px solid var(--vscode-panel-border, #333); }
+    .tool-section-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--vscode-descriptionForeground, #888); margin-bottom: 4px; }
+    .tool-section pre { font-family: monospace; font-size: 11px; white-space: pre-wrap; word-break: break-all; color: var(--vscode-foreground, #ccc); }
+
+    /* Stats */
+    .stats-row {
+      font-size: 11px;
+      color: var(--vscode-descriptionForeground, #888);
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      padding: 4px 0 0;
+    }
+
+    /* Apply diff button */
+    .apply-btn {
+      background: var(--vscode-button-background, #0e639c);
+      color: var(--vscode-button-foreground, #fff);
+      border: none;
+      border-radius: 3px;
+      padding: 4px 10px;
+      font-size: 11px;
+      cursor: pointer;
+      margin-top: 6px;
+    }
+    .apply-btn:hover { background: var(--vscode-button-hoverBackground, #1177bb); }
+
+    /* Typing */
+    .typing { display: flex; gap: 3px; align-items: center; padding: 4px 0; }
+    .typing span { width: 5px; height: 5px; background: var(--vscode-descriptionForeground, #888); border-radius: 50%; animation: bounce 1.2s ease-in-out infinite; }
+    .typing span:nth-child(2) { animation-delay: 0.2s; }
+    .typing span:nth-child(3) { animation-delay: 0.4s; }
+    @keyframes bounce { 0%, 60%, 100% { transform: translateY(0); } 30% { transform: translateY(-4px); } }
+
+    /* Empty state */
+    .empty {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      color: var(--vscode-descriptionForeground, #888);
+      text-align: center;
+      padding: 30px 20px;
+    }
+    .empty-title { font-size: 14px; font-weight: 600; color: var(--vscode-foreground, #ccc); }
+    .empty-sub { font-size: 12px; line-height: 1.6; max-width: 260px; }
+    .suggestions { display: flex; flex-direction: column; gap: 5px; width: 100%; margin-top: 8px; }
+    .suggestion {
+      background: var(--vscode-editorWidget-background, #252526);
+      border: 1px solid var(--vscode-panel-border, #333);
+      border-radius: 3px;
+      padding: 7px 10px;
+      font-size: 12px;
+      cursor: pointer;
+      text-align: left;
+      color: var(--vscode-foreground, #ccc);
+    }
+    .suggestion:hover { border-color: var(--vscode-focusBorder, #0e70c0); }
+
+    /* Input */
+    .input-area {
+      padding: 8px 10px;
+      border-top: 1px solid var(--vscode-panel-border, #333);
+      flex-shrink: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .input-wrap {
+      display: flex;
+      gap: 6px;
+      align-items: flex-end;
+      background: var(--vscode-input-background, #3c3c3c);
+      border: 1px solid var(--vscode-input-border, #555);
+      border-radius: 4px;
+      padding: 6px 8px;
+    }
+    .input-wrap:focus-within { border-color: var(--vscode-focusBorder, #0e70c0); }
+    #prompt {
+      flex: 1;
+      background: none;
+      border: none;
+      outline: none;
+      color: var(--vscode-input-foreground, #ccc);
+      font-size: 13px;
+      font-family: inherit;
+      resize: none;
+      max-height: 120px;
+      line-height: 1.4;
+    }
+    #prompt::placeholder { color: var(--vscode-input-placeholderForeground, #666); }
+    #send-btn {
+      background: var(--vscode-button-background, #0e639c);
+      border: none;
+      border-radius: 3px;
+      width: 26px;
+      height: 26px;
+      color: #fff;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      font-size: 13px;
+    }
+    #send-btn:hover { background: var(--vscode-button-hoverBackground, #1177bb); }
+    #send-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    .input-options {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      font-size: 11px;
+      color: var(--vscode-descriptionForeground, #888);
+    }
+    .toggle-wrap { display: flex; align-items: center; gap: 4px; cursor: pointer; }
+    .mini-toggle {
+      width: 26px;
+      height: 14px;
+      background: var(--vscode-panel-border, #555);
+      border-radius: 7px;
+      position: relative;
+      transition: background 0.15s;
+      cursor: pointer;
+      border: none;
+      flex-shrink: 0;
+    }
+    .mini-toggle.on { background: var(--vscode-button-background, #0e639c); }
+    .mini-toggle::after {
+      content: "";
+      position: absolute;
+      width: 10px;
+      height: 10px;
+      background: white;
+      border-radius: 50%;
+      top: 2px;
+      left: 2px;
+      transition: transform 0.15s;
+    }
+    .mini-toggle.on::after { transform: translateX(12px); }
+
+    /* Scrollbar */
+    ::-webkit-scrollbar { width: 5px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--vscode-scrollbarSlider-background, #555); border-radius: 3px; }
+
+    /* Code search modal */
+    .search-results {
+      display: none;
+      background: var(--vscode-editorWidget-background, #252526);
+      border: 1px solid var(--vscode-panel-border, #333);
+      border-radius: 4px;
+      margin: 4px 10px;
+      padding: 8px;
+      font-size: 12px;
+      max-height: 200px;
+      overflow-y: auto;
+    }
+    .search-results.open { display: block; }
+  </style>
+</head>
+<body>
+
+<!-- Toolbar -->
+<div class="toolbar">
+  <span class="toolbar-label" id="toolbar-label">harness</span>
+  <button class="tbtn" onclick="triggerBuildIndex()">Index</button>
+  <button class="tbtn" onclick="clearChat()">Clear</button>
+  <button class="tbtn" onclick="vscode.postMessage({type:'open_settings'})">⚙</button>
+</div>
+
+<!-- Index status bar -->
+<div class="index-bar">
+  <div class="index-dot" id="index-dot"></div>
+  <span class="index-status-text" id="index-status">Checking…</span>
+  <div class="index-search-wrap">
+    <input type="text" id="code-search-input" placeholder="Search code…" />
+    <button onclick="doCodeSearch()">↵</button>
+  </div>
+</div>
+<div class="progress-track" id="progress-track">
+  <div class="progress-bar" id="progress-bar"></div>
+</div>
+
+<!-- Code search results -->
+<div class="search-results" id="search-results"></div>
+
+<!-- Messages -->
+<div id="messages">
+  <div class="empty" id="empty-state">
+    <div class="empty-title">⚡ Harness</div>
+    <div class="empty-sub">Open LLM coding assistant. Codebase search, file editing, web search — no subscription.</div>
+    <div class="suggestions">
+      <button class="suggestion" onclick="sendSuggestion(this.dataset.p)" data-p="Explain the active file">📄 Explain active file</button>
+      <button class="suggestion" onclick="sendSuggestion(this.dataset.p)" data-p="What tests are missing from this codebase?">🧪 Find missing tests</button>
+      <button class="suggestion" onclick="sendSuggestion(this.dataset.p)" data-p="Search the web for the latest Llama model releases">🔍 Search latest LLM news</button>
+      <button class="suggestion" onclick="sendSuggestion(this.dataset.p)" data-p="What does the retry logic in this codebase do?">🔁 Explain retry logic</button>
+    </div>
+  </div>
+</div>
+
+<!-- Input area -->
+<div class="input-area">
+  <div class="input-wrap">
+    <textarea id="prompt" placeholder="Ask anything… (⌘↵ or Ctrl+↵ to send)" rows="1"></textarea>
+    <button id="send-btn" onclick="sendMessage()">↑</button>
+  </div>
+  <div class="input-options">
+    <label class="toggle-wrap" onclick="toggleFileContext()">
+      <button class="mini-toggle on" id="file-ctx-toggle"></button>
+      File context
+    </label>
+    <label class="toggle-wrap" onclick="toggleCodebaseCtx()">
+      <button class="mini-toggle on" id="codebase-ctx-toggle"></button>
+      Codebase context
+    </label>
+    <span id="abort-wrap" style="display:none; margin-left:auto">
+      <button class="tbtn danger" onclick="abortRun()">■ Stop</button>
+    </span>
+  </div>
+</div>
+
+<script>
+  const vscode = acquireVsCodeApi();
+
+  // ── State ─────────────────────────────────────────────────────────────────
+  let messages = [];
+  let running = false;
+  let includeFileCtx = true;
+  let includeCodebaseCtx = true;
+  let lastAnswerText = '';
+  let pendingToolCards = {};
+
+  // ── VS Code message handler ───────────────────────────────────────────────
+  window.addEventListener('message', ev => {
+    const { type, data } = ev.data;
+
+    switch (type) {
+      case 'start':
+        document.getElementById('toolbar-label').textContent = data.model;
+        break;
+
+      case 'tool_call': {
+        const key = addToolCard(data.name, data.args);
+        pendingToolCards[data.name] = key;
+        break;
+      }
+
+      case 'tool_result': {
+        const key = pendingToolCards[data.name];
+        if (key) resolveToolCard(key, data.result);
+        delete pendingToolCards[data.name];
+        break;
+      }
+
+      case 'answer':
+        lastAnswerText = data.text;
+        setAssistantText(data.text, data);
+        setRunning(false);
+        messages.push({ role: 'assistant', content: data.text });
+        break;
+
+      case 'error':
+        setAssistantText('**Error:** ' + data.message, null);
+        setRunning(false);
+        break;
+
+      case 'aborted':
+        setAssistantText('*(stopped)*', null);
+        setRunning(false);
+        break;
+
+      case 'index_progress':
+        onIndexProgress(data);
+        break;
+
+      case 'index_done':
+        onIndexDone(data);
+        break;
+
+      case 'index_error':
+        setIndexStatus(false, 'Error: ' + data.message);
+        break;
+
+      case 'search_result':
+        showSearchResults(data.results ?? ('Error: ' + data.error));
+        break;
+
+      case 'diffs_applied':
+        // handled via showInformationMessage in extension
+        break;
+
+      case 'inject_prompt':
+        document.getElementById('prompt').value = data;
+        sendMessage();
+        break;
+
+      case 'trigger_build_index':
+        triggerBuildIndex();
+        break;
+
+      case 'editor_context':
+        // not used directly in webview currently
+        break;
+    }
+  });
+
+  // ── Markdown renderer ─────────────────────────────────────────────────────
+  function renderMarkdown(text) {
+    return text
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/```(\w*)\n([\s\S]*?)```/g, (_, lang, code) =>
+        `<pre><code>${code.trim()}</code></pre>`)
+      .replace(/`([^`]+)`/g, '<code>$1</code>')
+      .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+      .replace(/\*(.+?)\*/g, '<em>$1</em>')
+      .replace(/^### (.+)$/gm, '<strong style="font-size:12px;opacity:0.8">$1</strong>')
+      .replace(/\n/g, '<br>');
+  }
+
+  // ── Message rendering ─────────────────────────────────────────────────────
+  let activeBubble = null;
+  let activeToolGroup = null;
+
+  function scrollBottom() {
+    const el = document.getElementById('messages');
+    el.scrollTop = el.scrollHeight;
+  }
+
+  function removeEmpty() {
+    const e = document.getElementById('empty-state');
+    if (e) e.remove();
+  }
+
+  function appendUserMsg(text) {
+    removeEmpty();
+    const msgs = document.getElementById('messages');
+    const el = document.createElement('div');
+    el.className = 'message user';
+    el.innerHTML = `
+      <div class="msg-header"><span class="msg-role user">You</span></div>
+      <div class="bubble">${renderMarkdown(text)}</div>`;
+    msgs.appendChild(el);
+    scrollBottom();
+  }
+
+  function appendAssistantPlaceholder() {
+    removeEmpty();
+    activeToolGroup = null;
+    pendingToolCards = {};
+    const msgs = document.getElementById('messages');
+    const el = document.createElement('div');
+    el.className = 'message assistant';
+    el.innerHTML = `
+      <div class="msg-header"><span class="msg-role assistant">Harness</span></div>
+      <div class="bubble"><div class="typing"><span></span><span></span><span></span></div></div>`;
+    msgs.appendChild(el);
+    activeBubble = el.querySelector('.bubble');
+    scrollBottom();
+    return el;
+  }
+
+  function setAssistantText(text, stats) {
+    if (!activeBubble) return;
+    let html = renderMarkdown(text);
+    if (stats && stats.usage) {
+      const cost = stats.cost ? ` · $${formatCost(stats.cost)}` : '';
+      html += `<div class="stats-row">
+        <span>${stats.usage.totalTokens.toLocaleString()} tokens${cost}</span>
+        <span>${stats.turns} turn(s) · ${stats.toolCallsMade} tool call(s)</span>
+      </div>`;
+    }
+    if (stats && stats.hasDiffs) {
+      html += `<button class="apply-btn" onclick="applyDiffs()">Apply diffs to files</button>`;
+    }
+    activeBubble.innerHTML = html;
+    scrollBottom();
+  }
+
+  function formatCost(c) {
+    const t = c.totalCost ?? (c.inputCost + c.outputCost);
+    return t < 0.001 ? '<0.001' : t.toFixed(4);
+  }
+
+  // ── Tool cards ────────────────────────────────────────────────────────────
+  let toolCardMap = {};
+  let toolCardSeq = 0;
+
+  function getToolGroup() {
+    if (!activeToolGroup) {
+      const msgs = document.getElementById('messages');
+      activeToolGroup = document.createElement('div');
+      msgs.appendChild(activeToolGroup);
+    }
+    return activeToolGroup;
+  }
+
+  function addToolCard(name, args) {
+    const group = getToolGroup();
+    const key = 'tc_' + (toolCardSeq++);
+    const card = document.createElement('div');
+    card.className = 'tool-card';
+    card.innerHTML = `
+      <div class="tool-header">
+        <span class="tool-chevron">▶</span>
+        <span class="tool-fn">${name}()</span>
+        <span class="tool-badge pending">running</span>
+      </div>
+      <div class="tool-body">
+        <div class="tool-section">
+          <div class="tool-section-label">Input</div>
+          <pre>${JSON.stringify(args, null, 2)}</pre>
+        </div>
+        <div id="${key}-result" style="display:none">
+          <div class="tool-section">
+            <div class="tool-section-label">Output</div>
+            <pre class="result-pre"></pre>
+          </div>
+        </div>
+      </div>`;
+    card.querySelector('.tool-header').addEventListener('click', () => card.classList.toggle('open'));
+    group.appendChild(card);
+    toolCardMap[key] = card;
+    scrollBottom();
+    return key;
+  }
+
+  function resolveToolCard(key, result) {
+    const card = toolCardMap[key];
+    if (!card) return;
+    card.querySelector('.tool-badge').className = 'tool-badge done';
+    card.querySelector('.tool-badge').textContent = 'done';
+    const resultWrap = card.querySelector('#' + key + '-result');
+    if (resultWrap) {
+      resultWrap.style.display = 'block';
+      const txt = typeof result === 'string' ? result : JSON.stringify(result, null, 2);
+      resultWrap.querySelector('.result-pre').textContent =
+        txt.length > 2000 ? txt.slice(0, 2000) + '\n…' : txt;
+    }
+    scrollBottom();
+  }
+
+  // ── Send ──────────────────────────────────────────────────────────────────
+  function sendMessage() {
+    const promptEl = document.getElementById('prompt');
+    const text = promptEl.value.trim();
+    if (!text || running) return;
+    promptEl.value = '';
+    promptEl.style.height = 'auto';
+
+    appendUserMsg(text);
+    messages.push({ role: 'user', content: text });
+    appendAssistantPlaceholder();
+    setRunning(true);
+
+    vscode.postMessage({
+      type: 'chat',
+      data: {
+        messages,
+        includeEditorContext: includeFileCtx,
+      },
+    });
+  }
+
+  function sendSuggestion(prompt) {
+    document.getElementById('prompt').value = prompt;
+    sendMessage();
+  }
+
+  function setRunning(state) {
+    running = state;
+    document.getElementById('send-btn').disabled = state;
+    document.getElementById('abort-wrap').style.display = state ? 'inline-flex' : 'none';
+  }
+
+  function abortRun() {
+    vscode.postMessage({ type: 'abort' });
+  }
+
+  function applyDiffs() {
+    vscode.postMessage({ type: 'apply_diffs', data: lastAnswerText });
+  }
+
+  function clearChat() {
+    messages = [];
+    lastAnswerText = '';
+    activeBubble = null;
+    activeToolGroup = null;
+    toolCardMap = {};
+    document.getElementById('messages').innerHTML = `
+      <div class="empty" id="empty-state">
+        <div class="empty-title">⚡ Harness</div>
+        <div class="empty-sub">Open LLM coding assistant. Codebase search, file editing, web search — no subscription.</div>
+        <div class="suggestions">
+          <button class="suggestion" onclick="sendSuggestion(this.dataset.p)" data-p="Explain the active file">📄 Explain active file</button>
+          <button class="suggestion" onclick="sendSuggestion(this.dataset.p)" data-p="What tests are missing from this codebase?">🧪 Find missing tests</button>
+          <button class="suggestion" onclick="sendSuggestion(this.dataset.p)" data-p="Search the web for the latest Llama model releases">🔍 Search latest LLM news</button>
+          <button class="suggestion" onclick="sendSuggestion(this.dataset.p)" data-p="What does the retry logic in this codebase do?">🔁 Explain retry logic</button>
+        </div>
+      </div>`;
+  }
+
+  // ── Toggles ───────────────────────────────────────────────────────────────
+  function toggleFileContext() {
+    includeFileCtx = !includeFileCtx;
+    const btn = document.getElementById('file-ctx-toggle');
+    btn.classList.toggle('on', includeFileCtx);
+  }
+
+  function toggleCodebaseCtx() {
+    includeCodebaseCtx = !includeCodebaseCtx;
+    const btn = document.getElementById('codebase-ctx-toggle');
+    btn.classList.toggle('on', includeCodebaseCtx);
+  }
+
+  // ── Index management ──────────────────────────────────────────────────────
+  function setIndexStatus(built, label) {
+    const dot = document.getElementById('index-dot');
+    dot.className = 'index-dot' + (built ? ' green' : '');
+    document.getElementById('index-status').textContent = label;
+    document.getElementById('progress-track').style.display = 'none';
+  }
+
+  function onIndexProgress(data) {
+    document.getElementById('index-dot').className = 'index-dot yellow';
+    document.getElementById('progress-track').style.display = 'block';
+    if (data.total > 0) {
+      const pct = Math.round((data.done / data.total) * 100);
+      document.getElementById('progress-bar').style.width = pct + '%';
+      document.getElementById('index-status').textContent = `Embedding ${data.done}/${data.total}…`;
+    } else {
+      document.getElementById('index-status').textContent = 'Chunking files…';
+    }
+  }
+
+  function onIndexDone(data) {
+    setIndexStatus(true, `${data.files} files · ${data.chunks} chunks`);
+  }
+
+  function triggerBuildIndex() {
+    document.getElementById('index-dot').className = 'index-dot yellow';
+    document.getElementById('index-status').textContent = 'Building…';
+    document.getElementById('progress-track').style.display = 'block';
+    document.getElementById('progress-bar').style.width = '5%';
+    vscode.postMessage({ type: 'build_index' });
+  }
+
+  function doCodeSearch() {
+    const q = document.getElementById('code-search-input').value.trim();
+    if (!q) return;
+    document.getElementById('index-status').textContent = 'Searching…';
+    vscode.postMessage({ type: 'search_code', data: q });
+  }
+
+  function showSearchResults(results) {
+    document.getElementById('index-status').textContent =
+      document.getElementById('index-dot').classList.contains('green') ? 'Ready' : 'Not built';
+    const el = document.getElementById('search-results');
+    if (typeof results === 'string') {
+      el.innerHTML = '<pre style="font-size:11px;white-space:pre-wrap">' +
+        results.replace(/&/g,'&amp;').replace(/</g,'&lt;') + '</pre>';
+    } else {
+      el.innerHTML = '<em style="color:var(--vscode-descriptionForeground)">' + results + '</em>';
+    }
+    el.classList.add('open');
+  }
+
+  document.getElementById('code-search-input').addEventListener('keydown', e => {
+    if (e.key === 'Enter') doCodeSearch();
+    if (e.key === 'Escape') {
+      document.getElementById('search-results').classList.remove('open');
+    }
+  });
+
+  // ── Input auto-resize ─────────────────────────────────────────────────────
+  const promptEl = document.getElementById('prompt');
+  promptEl.addEventListener('input', () => {
+    promptEl.style.height = 'auto';
+    promptEl.style.height = Math.min(promptEl.scrollHeight, 120) + 'px';
+  });
+  promptEl.addEventListener('keydown', e => {
+    if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+      e.preventDefault();
+      sendMessage();
+    }
+  });
+
+  // Request current index status on load
+  vscode.postMessage({ type: 'get_context' });
+</script>
+</body>
+</html>
