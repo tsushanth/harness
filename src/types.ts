@@ -29,8 +29,16 @@ export interface RunOptions {
   maxRetries?: number;
   model?: string;
   maxTokens?: number;
+  maxToolResultChars?: number; // max chars per tool result injected into context (default 4000)
+  maxConcurrentTools?: number; // max parallel tool calls per turn (default 5)
   systemPrompt?: string; // merged with harness tool-use instructions
   collector?: import("./finetune.js").FineTuneCollector;
+}
+
+export interface TokenUsage {
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
 }
 
 export interface RunResult {
@@ -38,4 +46,5 @@ export interface RunResult {
   turns: number;
   toolCallsMade: number;
   usedStrictMode: boolean;
+  usage: TokenUsage; // accumulated across all turns
 }

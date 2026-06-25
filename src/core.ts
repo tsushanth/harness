@@ -1,11 +1,32 @@
 import OpenAI from "openai";
 import type { ChatCompletionMessageFunctionToolCall } from "openai/resources/chat/completions";
-import type { RunOptions, RunResult, Message, ToolCall } from "./types.js";
-import { toOpenAITools, dispatch } from "./tools.js";
+import type { RunOptions, RunResult, Message, ToolCall, TokenUsage } from "./types.js";
+import { toOpenAITools, dispatch, serializeToolResult } from "./tools.js";
 import { repairToolCall } from "./repair.js";
 import { buildSystemPrompt, detectModelFamily } from "./prompt.js";
 import { supportsStrictTools, toStrictTools } from "./structured.js";
 import { streamRun, type StreamEvent } from "./stream.js";
+import { withRetry } from "./retry.js";
+
+async function runWithConcurrencyLimit<T, R>(
+  items: T[],
+  limit: number,
+  fn: (item: T) => Promise<R>
+): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let index = 0;
+
+  async function worker() {
+    while (index < items.length) {
+      const i = index++;
+      results[i] = await fn(items[i]!);
+    }
+  }
+
+  const workers = Array.from({ length: Math.min(limit, items.length) }, worker);
+  await Promise.all(workers);
+  return results;
+}
 
 export class Harness {
   private client: OpenAI;
@@ -23,6 +44,7 @@ export class Harness {
       maxRetries = 3,
       model = this.defaultModel,
       maxTokens,
+      maxToolResultChars,
       collector,
     } = options;
 
@@ -46,15 +68,24 @@ export class Harness {
     const openAITools = useStrict ? toStrictTools(tools) : toOpenAITools(tools);
     let turns = 0;
     let toolCallsMade = 0;
+    const usage: TokenUsage = { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
 
     while (turns < maxTurns) {
-      const response = await this.client.chat.completions.create({
-        model,
-        messages,
-        tools: openAITools,
-        tool_choice: "auto",
-        ...(maxTokens != null ? { max_tokens: maxTokens } : {}),
-      });
+      const response = await withRetry(() =>
+        this.client.chat.completions.create({
+          model,
+          messages,
+          tools: openAITools,
+          tool_choice: "auto",
+          ...(maxTokens != null ? { max_tokens: maxTokens } : {}),
+        })
+      );
+
+      if (response.usage) {
+        usage.promptTokens += response.usage.prompt_tokens;
+        usage.completionTokens += response.usage.completion_tokens;
+        usage.totalTokens += response.usage.total_tokens;
+      }
 
       const choice = response.choices[0];
       if (!choice) break;
@@ -75,13 +106,17 @@ export class Harness {
 
       if (fnToolCalls.length === 0) break;
 
-      const toolResults = await Promise.all(
-        fnToolCalls.map(async (tc) => {
+      // Concurrency cap: run at most N tool calls in parallel to avoid
+      // hammering rate-limited or slow tool implementations.
+      const concurrencyLimit = options.maxConcurrentTools ?? 5;
+      const toolResults = await runWithConcurrencyLimit(
+        fnToolCalls,
+        concurrencyLimit,
+        async (tc) => {
           let args: Record<string, unknown>;
 
           const toolDef = tools.find((t) => t.name === tc.function.name);
           try {
-            // Strict mode guarantees valid JSON matching the schema — skip repair
             args = useStrict
               ? (JSON.parse(tc.function.arguments) as Record<string, unknown>)
               : await repairToolCall(
@@ -113,7 +148,7 @@ export class Harness {
 
           toolCallsMade++;
           return dispatch(call, tools);
-        })
+        }
       );
 
       for (const tr of toolResults) {
@@ -122,12 +157,12 @@ export class Harness {
           tool_call_id: tr.id,
           content: tr.error
             ? `Error: ${tr.error}`
-            : JSON.stringify(tr.result),
+            : serializeToolResult(tr.result, maxToolResultChars),
         });
       }
     }
 
-    return { messages, turns, toolCallsMade, usedStrictMode: useStrict };
+    return { messages, turns, toolCallsMade, usedStrictMode: useStrict, usage };
   }
 
   stream(options: RunOptions): AsyncGenerator<StreamEvent> {

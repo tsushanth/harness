@@ -4,6 +4,7 @@ import type { ToolDefinition, Message } from "./types.js";
 import type { FineTuneCollector } from "./finetune.js";
 import { toOpenAITools } from "./tools.js";
 import { validateArgs } from "./schema.js";
+import { withRetry } from "./retry.js";
 
 export async function repairToolCall(
   client: OpenAI,
@@ -56,12 +57,14 @@ async function repairWithError(
       { role: "user", content: errorMessage },
     ];
 
-    const response = await client.chat.completions.create({
-      model,
-      messages: repairMessages,
-      tools: toOpenAITools(tools),
-      tool_choice: "required",
-    });
+    const response = await withRetry(() =>
+      client.chat.completions.create({
+        model,
+        messages: repairMessages,
+        tools: toOpenAITools(tools),
+        tool_choice: "required",
+      })
+    );
 
     const choice = response.choices[0];
     if (!choice) continue;
