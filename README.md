@@ -121,13 +121,21 @@ Evaluated on [Berkeley Function Calling Leaderboard v3](https://github.com/Shish
 
 Llama 3.3 70B with the harness scores **26 points higher** than GPT-4o-mini at **3× lower cost**. GPT-4o-mini's failures are largely due to OpenRouter rejecting dotted tool names (e.g. `math.factorial`) at the API level — the harness repair loop handles these gracefully.
 
-### Multiple (select from N functions)
+### Multiple (select the right function from N candidates)
 
-_Running..._
+| Model | Accuracy | Cost / 50 cases |
+|---|---|---|
+| **Llama 3.3 70B + harness** | **90%** | $0.079 |
+
+Stronger than simple — the model reliably selects the correct function when given several candidates.
 
 ### Parallel (call multiple functions in one turn)
 
-_Running..._
+| Model | Accuracy | Cost / 50 cases |
+|---|---|---|
+| **Llama 3.3 70B + harness** | **34%** | $0.050 |
+
+Parallel is the honest weak spot. Llama 3.3 70B frequently calls only one function when the prompt requires several simultaneously. This is a model-level limitation — the harness dispatches correctly when the model does issue parallel calls, but can't force the model to batch calls it chooses to make sequentially.
 
 Run it yourself:
 
