@@ -3,3 +3,4 @@ dist/
 *.env
 .env*
 src/debug.ts
+.harness-index.json

@@ -8,7 +8,8 @@ import {
 import OpenAI from "openai";
 import { execSync } from "node:child_process";
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
-import { Harness, formatCost, applyDiff } from "../src/index.js";
+import { Harness, formatCost, applyDiff, codebaseSearchProvider } from "../src/index.js";
+import { CodebaseIndex } from "../src/index/codebase.js";
 import type { ToolDefinition } from "../src/index.js";
 
 // ── Provider setup ────────────────────────────────────────────────────────────
@@ -33,6 +34,10 @@ const DEFAULT_MODEL = OPENROUTER_KEY
   : "llama-3.3-70b-versatile";
 
 const harness = new Harness({ client, model: DEFAULT_MODEL });
+
+// ── Codebase index (optional, loaded lazily) ──────────────────────────────────
+const INDEX_PATH = process.env.HARNESS_INDEX_PATH ?? ".harness-index.json";
+const codebaseIndex = new CodebaseIndex(client, INDEX_PATH);
 
 // ── Tool implementations ──────────────────────────────────────────────────────
 
@@ -210,7 +215,8 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
       description:
         "Run a prompt through an open-source LLM (Llama 3.3 70B) using the tool-use harness. " +
         "Delegate cheap/repetitive subtasks to avoid burning Claude tokens. " +
-        `The agent has access to: ${TOOL_NAMES}.`,
+        `The agent has access to: ${TOOL_NAMES}. ` +
+        "If a codebase index exists (.harness-index.json), relevant code is auto-injected as context.",
       inputSchema: {
         type: "object" as const,
         properties: {
@@ -226,29 +232,107 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
             type: "string",
             description: "Optional extra system context.",
           },
+          use_codebase_context: {
+            type: "boolean",
+            description: "If true (default), inject relevant code chunks from the index as context.",
+          },
         },
         required: ["prompt"],
+      },
+    },
+    {
+      name: "search_code",
+      description:
+        "Semantic search over the indexed codebase. Returns the most relevant code chunks for a query. " +
+        "Requires the index to be built first with build_index.",
+      inputSchema: {
+        type: "object" as const,
+        properties: {
+          query: { type: "string", description: "Natural language or code search query." },
+          top_k: { type: "number", description: "Number of results to return (default 5)." },
+        },
+        required: ["query"],
+      },
+    },
+    {
+      name: "build_index",
+      description:
+        "Build or rebuild the semantic codebase index for a directory. " +
+        "Run this once before using search_code or codebase context in run_agent. " +
+        "Uses text-embedding-3-small via OpenRouter. Takes ~10-30s for a typical project.",
+      inputSchema: {
+        type: "object" as const,
+        properties: {
+          directory: {
+            type: "string",
+            description: "Directory to index (default: current working directory).",
+          },
+        },
+        required: [],
       },
     },
   ],
 }));
 
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
-  if (request.params.name !== "run_agent") {
-    throw new Error(`Unknown tool: ${request.params.name}`);
+  const toolName = request.params.name;
+
+  // ── search_code ──────────────────────────────────────────────────────────────
+  if (toolName === "search_code") {
+    const { query, top_k } = request.params.arguments as { query: string; top_k?: number };
+    if (!codebaseIndex.isBuilt()) {
+      return {
+        content: [{
+          type: "text",
+          text: "No codebase index found. Run build_index first.",
+        }],
+      };
+    }
+    const results = await codebaseIndex.search(query, top_k ?? 5);
+    return {
+      content: [{ type: "text", text: results ?? "No relevant code found." }],
+    };
   }
 
-  const { prompt, model, system_prompt } = request.params.arguments as {
+  // ── build_index ──────────────────────────────────────────────────────────────
+  if (toolName === "build_index") {
+    const { directory } = request.params.arguments as { directory?: string };
+    const dir = directory ?? process.cwd();
+    process.env.HARNESS_EMBEDDING_MODEL = "openai/text-embedding-3-small";
+    const start = Date.now();
+    const { chunks, files } = await codebaseIndex.build(dir);
+    const elapsed = ((Date.now() - start) / 1000).toFixed(1);
+    return {
+      content: [{
+        type: "text",
+        text: `Index built: ${files} files, ${chunks} chunks in ${elapsed}s. Saved to ${INDEX_PATH}.`,
+      }],
+    };
+  }
+
+  // ── run_agent ────────────────────────────────────────────────────────────────
+  if (toolName !== "run_agent") {
+    throw new Error(`Unknown tool: ${toolName}`);
+  }
+
+  const { prompt, model, system_prompt, use_codebase_context = true } = request.params.arguments as {
     prompt: string;
     model?: string;
     system_prompt?: string;
+    use_codebase_context?: boolean;
   };
+
+  const contextProviders =
+    use_codebase_context && codebaseIndex.isBuilt()
+      ? [codebaseSearchProvider(codebaseIndex, prompt)]
+      : [];
 
   const result = await harness.run({
     model: model ?? DEFAULT_MODEL,
     tools: DEMO_TOOLS,
     systemPrompt: system_prompt,
     messages: [{ role: "user", content: prompt }],
+    contextProviders,
   });
 
   const lastMessage = [...result.messages]
