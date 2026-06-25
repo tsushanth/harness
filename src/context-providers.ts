@@ -135,6 +135,20 @@ export function shellProvider(command: string, cwd = "."): ContextProvider {
   };
 }
 
+/** Semantic codebase search — finds chunks relevant to the user's query */
+export function codebaseSearchProvider(
+  index: import("./index/codebase.js").CodebaseIndex,
+  query: string,
+  topK = 5
+): ContextProvider {
+  return {
+    name: "codebase:search",
+    async fetch() {
+      return index.search(query, topK);
+    },
+  };
+}
+
 // ── Context injection ─────────────────────────────────────────────────────────
 
 /**

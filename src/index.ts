@@ -15,8 +15,14 @@ export {
   gitLogProvider,
   directoryProvider,
   shellProvider,
+  codebaseSearchProvider,
   injectContext,
 } from "./context-providers.js";
+export { CodebaseIndex } from "./index/codebase.js";
+export { chunkDirectory } from "./index/chunker.js";
+export { embedChunks, embedQuery } from "./index/embedder.js";
+export { loadStore, saveStore, search } from "./index/store.js";
+export type { SearchResult } from "./index/store.js";
 export type { CostEstimate } from "./cost.js";
 export type { Plan, PlanStep } from "./planner.js";
 export type { DiffResult } from "./diff.js";
