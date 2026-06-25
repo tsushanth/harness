@@ -1,4 +1,5 @@
 import type { ChatCompletionMessageParam } from "openai/resources/chat/completions";
+import type { CostEstimate } from "./cost.js";
 
 export type Message = ChatCompletionMessageParam;
 
@@ -31,6 +32,7 @@ export interface RunOptions {
   maxTokens?: number;
   maxToolResultChars?: number; // max chars per tool result injected into context (default 4000)
   maxConcurrentTools?: number; // max parallel tool calls per turn (default 5)
+  signal?: AbortSignal;         // cancellation
   systemPrompt?: string; // merged with harness tool-use instructions
   collector?: import("./finetune.js").FineTuneCollector;
 }
@@ -46,5 +48,7 @@ export interface RunResult {
   turns: number;
   toolCallsMade: number;
   usedStrictMode: boolean;
-  usage: TokenUsage; // accumulated across all turns
+  usage: TokenUsage;          // accumulated across all turns
+  cost: CostEstimate | null;  // null when model isn't in pricing table
+  wasPruned: boolean;         // true if context overflow pruning fired
 }

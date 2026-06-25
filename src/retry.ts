@@ -5,6 +5,7 @@ export interface RetryOptions {
   maxAttempts?: number; // default 4
   baseDelayMs?: number; // default 500
   maxDelayMs?: number;  // default 30_000
+  signal?: AbortSignal;
 }
 
 // Wraps any async fn with exponential backoff + jitter.
@@ -13,14 +14,18 @@ export async function withRetry<T>(
   fn: () => Promise<T>,
   options: RetryOptions = {}
 ): Promise<T> {
-  const { maxAttempts = 4, baseDelayMs = 500, maxDelayMs = 30_000 } = options;
+  const { maxAttempts = 4, baseDelayMs = 500, maxDelayMs = 30_000, signal } = options;
 
   let lastError: unknown;
 
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
     try {
       return await fn();
     } catch (err) {
+      // Propagate abort errors immediately — never retry
+      if (err instanceof Error && err.name === "AbortError") throw err;
+
       lastError = err;
 
       const status = extractStatus(err);
@@ -33,7 +38,7 @@ export async function withRetry<T>(
       if (attempt === maxAttempts - 1) break;
 
       const delay = jittered(baseDelayMs * 2 ** attempt, maxDelayMs);
-      await sleep(delay);
+      await sleep(delay, signal);
     }
   }
 
@@ -54,6 +59,12 @@ function jittered(base: number, max: number): number {
   return Math.random() * Math.min(base, max);
 }
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(resolve, ms);
+    signal?.addEventListener("abort", () => {
+      clearTimeout(timer);
+      reject(new DOMException("Aborted", "AbortError"));
+    }, { once: true });
+  });
 }

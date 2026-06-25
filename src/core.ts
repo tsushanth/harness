@@ -7,6 +7,8 @@ import { buildSystemPrompt, detectModelFamily } from "./prompt.js";
 import { supportsStrictTools, toStrictTools } from "./structured.js";
 import { streamRun, type StreamEvent } from "./stream.js";
 import { withRetry } from "./retry.js";
+import { pruneMessages, estimateTokens, getContextLimit } from "./context.js";
+import { estimateCost } from "./cost.js";
 
 async function runWithConcurrencyLimit<T, R>(
   items: T[],
@@ -45,6 +47,7 @@ export class Harness {
       model = this.defaultModel,
       maxTokens,
       maxToolResultChars,
+      signal,
       collector,
     } = options;
 
@@ -68,17 +71,33 @@ export class Harness {
     const openAITools = useStrict ? toStrictTools(tools) : toOpenAITools(tools);
     let turns = 0;
     let toolCallsMade = 0;
+    let wasPruned = false;
     const usage: TokenUsage = { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
+    const contextLimit = getContextLimit(model);
 
     while (turns < maxTurns) {
-      const response = await withRetry(() =>
-        this.client.chat.completions.create({
-          model,
-          messages,
-          tools: openAITools,
-          tool_choice: "auto",
-          ...(maxTokens != null ? { max_tokens: maxTokens } : {}),
-        })
+      // Prune context before each completion if we're approaching the limit
+      const tokensBefore = estimateTokens(messages);
+      if (tokensBefore > contextLimit * 0.80) {
+        const pruned = pruneMessages(messages, model);
+        if (pruned.length < messages.length) {
+          messages.length = 0;
+          messages.push(...pruned);
+          wasPruned = true;
+        }
+      }
+
+      const response = await withRetry(
+        () =>
+          this.client.chat.completions.create({
+            model,
+            messages,
+            tools: openAITools,
+            tool_choice: "auto",
+            ...(maxTokens != null ? { max_tokens: maxTokens } : {}),
+            ...(signal != null ? { signal } : {}),
+          }),
+        signal != null ? { signal } : {}
       );
 
       if (response.usage) {
@@ -162,7 +181,8 @@ export class Harness {
       }
     }
 
-    return { messages, turns, toolCallsMade, usedStrictMode: useStrict, usage };
+    const cost = estimateCost(usage, model);
+    return { messages, turns, toolCallsMade, usedStrictMode: useStrict, usage, cost, wasPruned };
   }
 
   stream(options: RunOptions): AsyncGenerator<StreamEvent> {
