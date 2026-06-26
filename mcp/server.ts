@@ -8,7 +8,7 @@ import {
 import OpenAI from "openai";
 import { execSync } from "node:child_process";
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
-import { Harness, formatCost, applyDiff, codebaseSearchProvider } from "../src/index.js";
+import { Harness, formatCost, applyDiff, codebaseSearchProvider, SessionMemory, makeRememberTool } from "../src/index.js";
 import { CodebaseIndex } from "../src/index/codebase.js";
 import type { ToolDefinition } from "../src/index.js";
 
@@ -38,6 +38,10 @@ const harness = new Harness({ client, model: DEFAULT_MODEL });
 // ── Codebase index (optional, loaded lazily) ──────────────────────────────────
 const INDEX_PATH = process.env.HARNESS_INDEX_PATH ?? ".harness-index.json";
 const codebaseIndex = new CodebaseIndex(client, INDEX_PATH);
+
+// ── Session memory (persists across MCP server restarts) ──────────────────────
+const MEMORY_PATH = process.env.HARNESS_MEMORY_PATH ?? ".harness-memory.json";
+const memory = new SessionMemory(MEMORY_PATH);
 
 // ── Tool implementations ──────────────────────────────────────────────────────
 
@@ -198,6 +202,7 @@ const DEMO_TOOLS: ToolDefinition[] = [
     parameters: { type: "object", properties: {} },
     fn: () => ({ utc: new Date().toISOString() }),
   },
+  makeRememberTool(memory),
 ];
 
 // ── MCP server ────────────────────────────────────────────────────────────────
@@ -322,10 +327,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     use_codebase_context?: boolean;
   };
 
-  const contextProviders =
-    use_codebase_context && codebaseIndex.isBuilt()
+  const contextProviders = [
+    memory.asContextProvider(),
+    ...(use_codebase_context && codebaseIndex.isBuilt()
       ? [codebaseSearchProvider(codebaseIndex, prompt)]
-      : [];
+      : []),
+  ];
 
   const result = await harness.run({
     model: model ?? DEFAULT_MODEL,
@@ -334,6 +341,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     messages: [{ role: "user", content: prompt }],
     contextProviders,
   });
+
+  // Auto-learn from this run (tool sequences, context pressure signals)
+  memory.learnFromRun(result, prompt.slice(0, 120));
 
   const lastMessage = [...result.messages]
     .reverse()

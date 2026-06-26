@@ -4,6 +4,8 @@ export { toOpenAITools, dispatch } from "./tools.js";
 export { streamRun } from "./stream.js";
 export { FineTuneCollector } from "./finetune.js";
 export type { FineTuneExample } from "./finetune.js";
+export { SessionMemory, makeRememberTool } from "./memory.js";
+export type { MemoryEntry, MemoryEntryType } from "./memory.js";
 export { estimateCost, formatCost } from "./cost.js";
 export { pruneMessages, estimateTokens, getContextLimit } from "./context.js";
 export { makePlan, planToSystemAddendum } from "./planner.js";
