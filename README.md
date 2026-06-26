@@ -1,8 +1,8 @@
 # harness
 
-**The free, open-source alternative to Continue.dev — without the IDE plugin.**
+**The free, open-source alternative to Continue.dev.**
 
-Use any open LLM (Llama, Qwen, Mistral) as a capable coding assistant with codebase search, file editing, web search, and shell access. No extension install. No subscription. No data leaving your machine except the model call.
+Use any open LLM (Llama, Qwen, Mistral) as a capable coding assistant with codebase search, file editing, web search, and shell access. Available as a VS Code extension, a web UI, an MCP server for Claude Code, or an embeddable npm library. No subscription. No data collection.
 
 ---
 
@@ -20,14 +20,15 @@ Harness is a library + server that gives you the same capabilities — codebase 
 | Web search | ✅ Via `@web` | ✅ Brave Search API |
 | Shell execution | ✅ Terminal integration | ✅ `shell` tool |
 | Plan before acting | ✅ Agent mode | ✅ `plan: true` — decomposes task into ordered steps |
-| Works without IDE | ❌ Extension required | ✅ CLI, web UI, MCP server, or npm package |
+| VS Code extension | ✅ | ✅ Ships with one (`vscode/`) |
+| Works without IDE | ❌ Extension required | ✅ Web UI, MCP server, CLI, or npm package |
 | Embeddable in your own app | ❌ | ✅ `npm install @tsushanth/harness` |
 | MCP server for Claude Code | ❌ | ✅ Ships with one |
 | Cost tracking | ❌ | ✅ USD per run, built-in pricing table |
 | Fine-tuning flywheel | ❌ | ✅ Repair loops exported as JSONL training pairs |
 | License | Apache 2.0 | MIT |
 
-The gap harness doesn't close: **autocomplete (fill-in-middle)** and **inline diff UI**. Those require IDE hooks. Everything else is here.
+The one gap harness doesn't close: **fill-in-middle autocomplete**. That requires deep editor hooks that are specific to Continue's architecture. Everything else is here.
 
 ---
 
@@ -54,16 +55,147 @@ The harness fixes this with three layers — no model swap required:
 
 ## Install
 
-**As a library:**
+There are four ways to use harness. Pick the one that fits.
+
+---
+
+### Option 1 — VS Code extension (recommended for most people)
+
+The extension adds a sidebar chat panel, right-click commands, and active file / selection context injection directly into VS Code.
+
+**Prerequisites:** Node.js 18+, VS Code 1.85+, `vsce` for packaging.
+
 ```bash
-npm install @tsushanth/harness
+# 1. Clone the repo
+git clone https://github.com/tsushanth/harness
+cd harness
+
+# 2. Build the harness library (the extension depends on it locally)
+npm install
+npm run build
+
+# 3. Install and build the extension
+cd vscode
+npm install
+npm run build
+
+# 4. Package into a .vsix file
+npm run package        # produces harness-0.1.0.vsix
+
+# 5. Install into VS Code
+npm run install-ext    # runs: code --install-extension harness-0.1.0.vsix
 ```
 
-**Web UI + MCP server (clone the repo):**
+After install:
+1. Reload VS Code (`Cmd+Shift+P` → "Reload Window")
+2. A sparkle icon ✦ appears in the activity bar — click it to open the chat panel
+3. Run `Harness: Set API Key` from the command palette to store your key (encrypted via VS Code SecretStorage)
+4. Start chatting — the active file and selection are automatically injected as context
+
+**API keys (get one free):**
+- [Groq](https://console.groq.com) — free tier, very fast (recommended to start)
+- [OpenRouter](https://openrouter.ai) — 200+ models, pay-per-token
+- Ollama — no key needed, runs fully local (`ollama pull llama3.3`)
+
+**Keyboard shortcuts:**
+- `Cmd+Shift+H` / `Ctrl+Shift+H` — open chat panel
+- `Cmd+Shift+A` / `Ctrl+Shift+A` — ask about selected code
+- Right-click any selection → "Ask Harness About Selection" or "Fix with Harness"
+
+**Settings** (VS Code settings JSON or UI, prefix `harness.`):
+
+| Setting | Default | Description |
+|---|---|---|
+| `harness.provider` | `groq` | `groq` / `openrouter` / `ollama` |
+| `harness.model` | *(provider default)* | Override model, e.g. `qwen/qwen-2.5-72b-instruct` |
+| `harness.ollamaBaseUrl` | `http://localhost:11434` | Ollama server URL |
+| `harness.indexPath` | `.harness-index.json` | Path to vector index, relative to workspace root |
+| `harness.enableCodebaseContext` | `true` | Auto-inject relevant code chunks |
+| `harness.enableFileContext` | `true` | Auto-inject active file |
+
+---
+
+### Option 2 — Web UI (browser-based chat, no IDE required)
+
 ```bash
 git clone https://github.com/tsushanth/harness
 cd harness
 npm install
+
+# Groq (free, fastest)
+GROQ_API_KEY=gsk_... npm run ui
+
+# OpenRouter
+OPENROUTER_API_KEY=sk-or-... npm run ui
+
+# With web search (Brave Search API — free tier available at brave.com/search/api)
+OPENROUTER_API_KEY=... BRAVE_SEARCH_API_KEY=BSA... npm run ui
+
+# Custom port
+OPENROUTER_API_KEY=... npx tsx ui/server.ts --port=4000
+```
+
+Opens at **http://localhost:3737**. Build the codebase index from the sidebar panel.
+
+---
+
+### Option 3 — MCP server (inside Claude Code)
+
+Lets you call `run_agent`, `search_code`, and `build_index` as tools mid-conversation in Claude Code, delegating cheap subtasks to Llama 70B without burning Sonnet/Opus tokens.
+
+```bash
+# Register the server (run once)
+claude mcp add harness \
+  -e OPENROUTER_API_KEY=sk-or-... \
+  -e BRAVE_SEARCH_API_KEY=BSA... \
+  -- npx tsx /path/to/harness/mcp/server.ts
+
+# Verify it connected
+claude mcp get harness
+```
+
+You'll see three tools available in Claude Code: `run_agent`, `search_code`, `build_index`.
+
+---
+
+### Option 4 — npm library (embed in your own app)
+
+```bash
+npm install @tsushanth/harness
+```
+
+```typescript
+import OpenAI from "openai";
+import { Harness } from "@tsushanth/harness";
+
+const client = new OpenAI({
+  baseURL: "https://api.groq.com/openai/v1",
+  apiKey: process.env.GROQ_API_KEY,
+});
+
+const harness = new Harness({ client, model: "llama-3.3-70b-versatile" });
+
+const result = await harness.run({
+  messages: [{ role: "user", content: "What's the weather in Tokyo?" }],
+  tools: [
+    {
+      name: "get_weather",
+      description: "Get current weather for a city",
+      parameters: {
+        type: "object",
+        properties: {
+          city: { type: "string" },
+          unit: { type: "string", enum: ["celsius", "fahrenheit"] },
+        },
+        required: ["city"],
+      },
+      fn: async ({ city }) => ({ city, temperature: 22, condition: "sunny" }),
+    },
+  ],
+});
+
+console.log(result.usage);  // { promptTokens, completionTokens, totalTokens }
+console.log(result.cost);   // { inputCost, outputCost, totalCost } in USD
 ```
 
 ---
@@ -154,61 +286,7 @@ const result = await harness.run({
 
 ---
 
-## Quickstart (library)
-
-```typescript
-import OpenAI from "openai";
-import { Harness } from "@tsushanth/harness";
-
-const client = new OpenAI({
-  baseURL: "https://api.groq.com/openai/v1",
-  apiKey: process.env.GROQ_API_KEY,
-});
-
-const harness = new Harness({ client, model: "llama-3.3-70b-versatile" });
-
-const result = await harness.run({
-  messages: [{ role: "user", content: "What's the weather in Tokyo?" }],
-  tools: [
-    {
-      name: "get_weather",
-      description: "Get current weather for a city",
-      parameters: {
-        type: "object",
-        properties: {
-          city: { type: "string" },
-          unit: { type: "string", enum: ["celsius", "fahrenheit"] },
-        },
-        required: ["city"],
-      },
-      fn: async ({ city }) => ({ city, temperature: 22, condition: "sunny" }),
-    },
-  ],
-});
-
-console.log(result.usage);  // { promptTokens, completionTokens, totalTokens }
-console.log(result.cost);   // { inputCost, outputCost, totalCost } in USD
-```
-
-## Providers
-
-```bash
-# Groq — free tier, 10× faster latency
-OPENAI_BASE_URL=https://api.groq.com/openai/v1  MODEL=llama-3.3-70b-versatile
-
-# Ollama — fully local, no API key, no data leaves your machine
-OPENAI_BASE_URL=http://localhost:11434/v1  MODEL=llama3.3
-
-# OpenRouter — unified gateway for 200+ models
-OPENAI_BASE_URL=https://openrouter.ai/api/v1  MODEL=meta-llama/llama-3.3-70b-instruct
-
-# Together AI
-OPENAI_BASE_URL=https://api.together.xyz/v1  MODEL=meta-llama/Llama-3-70b-chat-hf
-```
-
----
-
-## All options
+## All options (library API)
 
 ```typescript
 await harness.run({
@@ -306,6 +384,15 @@ ui/
   index.html           — Single-file chat UI (no build step)
 mcp/
   server.ts            — MCP server for Claude Code integration
+vscode/
+  package.json         — Extension manifest: commands, keybindings, settings, sidebar
+  src/
+    extension.ts       — activate(), register commands, status bar, first-run prompt
+    harness-panel.ts   — WebviewPanel: run harness, relay events, apply diffs, SecretStorage
+    context.ts         — Active file, selection range, git diff from VS Code editor API
+    diff-applier.ts    — Parse unified diffs, apply via VS Code TextEdit API, save files
+  webview/
+    chat.html          — Chat UI using acquireVsCodeApi() instead of fetch/SSE
 scripts/
   build-index.ts       — CLI: build codebase index
   run-bfcl.ts         — CLI: run BFCL v3 benchmark
